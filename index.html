@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Mapa com GPS e POIs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<style>
+html, body { height: 100%; margin: 0; }
+#map { height: 100%; width: 100%; }
+
+.gps-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: #1e1e2f;
+  color: white;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+<div id="map"></div>
+<button class="gps-btn" onclick="centerOnUser()">📍 Centralizar</button>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+let map = L.map('map').setView([-23.55, -46.63], 14);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
+
+let userMarker = null;
+let userCircle = null;
+let poiLayer = L.layerGroup().addTo(map);
+
+function startGPS() {
+  if (!navigator.geolocation) {
+    alert("Geolocalização não suportada");
+    return;
+  }
+
+  navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      if (!userMarker) {
+        userMarker = L.marker([latitude, longitude]).addTo(map);
+        userCircle = L.circle([latitude, longitude], {
+          radius: accuracy,
+          color: '#0096ff',
+          fillOpacity: 0.3
+        }).addTo(map);
+        map.setView([latitude, longitude], 16);
+      } else {
+        userMarker.setLatLng([latitude, longitude]);
+        userCircle.setLatLng([latitude, longitude]);
+      }
+
+      loadPOIs(latitude, longitude, 1200);
+    },
+    err => alert("Erro GPS: " + err.message),
+    { enableHighAccuracy: true }
+  );
+}
+
+function centerOnUser() {
+  if (userMarker) {
+    map.setView(userMarker.getLatLng(), 16);
+  }
+}
+
+function loadPOIs(lat, lon, radius) {
+  poiLayer.clearLayers();
+
+  const query = `
+  [out:json][timeout:25];
+  (
+    node(around:${radius},${lat},${lon})[amenity];
+  );
+  out;
+  `;
+
+  fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: query
+  })
+  .then(res => res.json())
+  .then(data => {
+    data.elements.forEach(p => {
+      if (p.lat && p.lon) {
+        L.marker([p.lat, p.lon])
+          .addTo(poiLayer)
+          .bindPopup(p.tags.name || p.tags.amenity);
+      }
+    });
+  })
+  .catch(err => console.error("POI erro:", err));
+}
+
+startGPS();
+</script>
+</body>
+</html>
